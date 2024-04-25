@@ -1,0 +1,234 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "name": "m3_assignment_part_III.ipynb",
+      "provenance": []
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# Part III\n",
+        "Using the previous two tutorials, please answer the following using an encorder-decoder approach and an LSTM compared approach.\n",
+        "\n",
+        "Please create a transformer-based classifier for English name classification into male or female.\n",
+        "\n",
+        "There are several datasets for name for male or female classification. In subseuqent iterations, this could be expanded to included more classifications.\n",
+        "\n",
+        "Below is the source from NLTK, which only has male and female available but could be used for the purposes of this assignment.\n",
+        "\n",
+        "```\n",
+        "names = nltk.corpus.names\n",
+        "names.fileids()\n",
+        "['female.txt', 'male.txt']\n",
+        "male_names = names.words('male.txt')\n",
+        "female_names = names.words('female.txt')\n",
+        "[w for w in male_names if w in female_names]\n",
+        "['Abbey', 'Abbie', 'Abby', 'Addie', 'Adrian', 'Adrien', 'Ajay', 'Alex', 'Alexis',\n",
+        "'Alfie', 'Ali', 'Alix', 'Allie', 'Allyn', 'Andie', 'Andrea', 'Andy', 'Angel',\n",
+        "'Angie', 'Ariel', 'Ashley', 'Aubrey', 'Augustine', 'Austin', 'Averil', ...]\n",
+        "```"
+      ],
+      "metadata": {
+        "id": "QD5ia2HsZpsC"
+      }
+    },
+    {
+      "cell_type": "code",
+      "execution_count": 1,
+      "metadata": {
+        "id": "xKQa86RpY5rH",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "05e4d587-d6b7-47fb-cbf5-0efe7db2f5af"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": [
+            "[nltk_data] Downloading package names to /root/nltk_data...\n",
+            "[nltk_data]   Unzipping corpora/names.zip.\n"
+          ]
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Epoch 1/10\n",
+            "100/100 [==============================] - 69s 609ms/step - loss: 0.7548 - accuracy: 0.5976 - val_loss: 0.6956 - val_accuracy: 0.6092\n",
+            "Epoch 2/10\n",
+            "100/100 [==============================] - 58s 582ms/step - loss: 0.6747 - accuracy: 0.6156 - val_loss: 0.6699 - val_accuracy: 0.6092\n",
+            "Epoch 3/10\n",
+            "100/100 [==============================] - 57s 573ms/step - loss: 0.6723 - accuracy: 0.6159 - val_loss: 0.6748 - val_accuracy: 0.6092\n",
+            "Epoch 4/10\n",
+            "100/100 [==============================] - 58s 582ms/step - loss: 0.6848 - accuracy: 0.5976 - val_loss: 0.6766 - val_accuracy: 0.6092\n",
+            "Epoch 5/10\n",
+            "100/100 [==============================] - 58s 577ms/step - loss: 0.6722 - accuracy: 0.6200 - val_loss: 0.6785 - val_accuracy: 0.6092\n",
+            "Epoch 6/10\n",
+            "100/100 [==============================] - 57s 575ms/step - loss: 0.6706 - accuracy: 0.6197 - val_loss: 0.6851 - val_accuracy: 0.6092\n",
+            "Epoch 7/10\n",
+            "100/100 [==============================] - 57s 567ms/step - loss: 0.6755 - accuracy: 0.6217 - val_loss: 0.6713 - val_accuracy: 0.6092\n",
+            "Epoch 8/10\n",
+            "100/100 [==============================] - 56s 557ms/step - loss: 0.6681 - accuracy: 0.6255 - val_loss: 0.6837 - val_accuracy: 0.6092\n",
+            "Epoch 9/10\n",
+            "100/100 [==============================] - 58s 578ms/step - loss: 0.6634 - accuracy: 0.6323 - val_loss: 0.7007 - val_accuracy: 0.6092\n",
+            "Epoch 10/10\n",
+            "100/100 [==============================] - 56s 561ms/step - loss: 0.6651 - accuracy: 0.6323 - val_loss: 0.6792 - val_accuracy: 0.6092\n",
+            "50/50 [==============================] - 4s 76ms/step - loss: 0.6792 - accuracy: 0.6092\n",
+            "Test Loss: 0.6791943907737732, Test Accuracy: 0.6091881394386292\n"
+          ]
+        }
+      ],
+      "source": [
+        "### START CODE HERE (REPLACE INSTANCES OF 'None' with your code) ###\n",
+        "import nltk\n",
+        "from nltk.corpus import names\n",
+        "import random\n",
+        "import numpy as np\n",
+        "import tensorflow as tf\n",
+        "from tensorflow.keras.preprocessing.sequence import pad_sequences\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "\n",
+        "# Download NLTK resources\n",
+        "nltk.download('names')\n",
+        "\n",
+        "# Step 1: Prepare the dataset\n",
+        "male_names = [name.lower() for name in names.words('male.txt')]\n",
+        "female_names = [name.lower() for name in names.words('female.txt')]\n",
+        "\n",
+        "# Step 2: Preprocess the data\n",
+        "all_names = male_names + female_names\n",
+        "max_length = max(len(name) for name in all_names)\n",
+        "\n",
+        "# Tokenize names\n",
+        "tokenizer = tf.keras.preprocessing.text.Tokenizer(char_level=True)\n",
+        "tokenizer.fit_on_texts(all_names)\n",
+        "vocab_size = len(tokenizer.word_index) + 1\n",
+        "\n",
+        "# Step 3: Prepare inputs and targets\n",
+        "# Create sequences of tokens\n",
+        "sequences = tokenizer.texts_to_sequences(all_names)\n",
+        "padded_sequences = pad_sequences(sequences, maxlen=max_length, padding='post')\n",
+        "\n",
+        "# Create labels (0 for male, 1 for female)\n",
+        "labels = np.array([0] * len(male_names) + [1] * len(female_names))\n",
+        "\n",
+        "# Step 4: Build and train the transformer-based classifier model\n",
+        "# Define model architecture (Transformer)\n",
+        "class TransformerClassifier(tf.keras.Model):\n",
+        "    def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size, maximum_position_encoding, rate=0.1):\n",
+        "        super(TransformerClassifier, self).__init__()\n",
+        "        self.encoder = tf.keras.layers.Embedding(input_vocab_size, d_model)\n",
+        "        self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)\n",
+        "        self.num_layers = num_layers\n",
+        "        self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]\n",
+        "        self.flatten = tf.keras.layers.Flatten()\n",
+        "        self.dropout = tf.keras.layers.Dropout(rate)\n",
+        "        self.fc = tf.keras.layers.Dense(1, activation='sigmoid')\n",
+        "\n",
+        "    def call(self, x, training, mask=None):\n",
+        "        seq_len = tf.shape(x)[1]\n",
+        "        x = self.encoder(x)\n",
+        "        x *= tf.math.sqrt(tf.cast(d_model, tf.float32))\n",
+        "        x += self.pos_encoding[:, :seq_len, :]\n",
+        "        x = self.dropout(x, training=training)\n",
+        "        for i in range(self.num_layers):\n",
+        "            x = self.enc_layers[i](x, training, mask)\n",
+        "        x = self.flatten(x)\n",
+        "        x = self.fc(x)\n",
+        "        return x\n",
+        "\n",
+        "# Define positional encoding\n",
+        "def get_angles(pos, i, d_model):\n",
+        "    angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(d_model))\n",
+        "    return pos * angle_rates\n",
+        "\n",
+        "def positional_encoding(position, d_model):\n",
+        "    angle_rads = get_angles(np.arange(position)[:, np.newaxis], np.arange(d_model)[np.newaxis, :], d_model)\n",
+        "    angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])\n",
+        "    angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])\n",
+        "    pos_encoding = angle_rads[np.newaxis, ...]\n",
+        "    return tf.cast(pos_encoding, dtype=tf.float32)\n",
+        "\n",
+        "# Define Transformer encoder layer\n",
+        "class EncoderLayer(tf.keras.layers.Layer):\n",
+        "    def __init__(self, d_model, num_heads, dff, rate=0.1):\n",
+        "        super(EncoderLayer, self).__init__()\n",
+        "        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=d_model)\n",
+        "        self.ffn = tf.keras.Sequential([\n",
+        "            tf.keras.layers.Dense(dff, activation='relu'),\n",
+        "            tf.keras.layers.Dense(d_model)\n",
+        "        ])\n",
+        "        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)\n",
+        "        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)\n",
+        "        self.dropout1 = tf.keras.layers.Dropout(rate)\n",
+        "        self.dropout2 = tf.keras.layers.Dropout(rate)\n",
+        "\n",
+        "    def call(self, x, training, mask=None):\n",
+        "        attn_output = self.mha(x, x, attention_mask=mask)\n",
+        "        attn_output = self.dropout1(attn_output, training=training)\n",
+        "        out1 = self.layernorm1(x + attn_output)\n",
+        "        ffn_output = self.ffn(out1)\n",
+        "        ffn_output = self.dropout2(ffn_output, training=training)\n",
+        "        out2 = self.layernorm2(out1 + ffn_output)\n",
+        "        return out2\n",
+        "\n",
+        "# Initialize model parameters\n",
+        "num_layers = 4\n",
+        "d_model = 128\n",
+        "num_heads = 8\n",
+        "dff = 512\n",
+        "input_vocab_size = vocab_size\n",
+        "maximum_position_encoding = max_length\n",
+        "\n",
+        "# Build and compile the model\n",
+        "transformer_classifier = TransformerClassifier(num_layers, d_model, num_heads, dff, input_vocab_size, maximum_position_encoding)\n",
+        "transformer_classifier.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])\n",
+        "\n",
+        "# Split the dataset into train and test sets\n",
+        "X_train, X_test, y_train, y_test = train_test_split(padded_sequences, labels, test_size=0.2, random_state=42)\n",
+        "\n",
+        "# Train the model\n",
+        "transformer_classifier.fit(X_train, y_train, epochs=10, batch_size=64, validation_data=(X_test, y_test))\n",
+        "\n",
+        "# Step 5: Evaluate the model on test data\n",
+        "loss, accuracy = transformer_classifier.evaluate(X_test, y_test)\n",
+        "print(f'Test Loss: {loss}, Test Accuracy: {accuracy}')\n",
+        "\n",
+        "### END CODE HERE ###"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "# References\n",
+        "1. https://arxiv.org/pdf/2102.03692.pdf\n",
+        "2. https://alvinntnu.github.io/NTNU_ENC2045_LECTURES/exercise/13-attention.html\n",
+        "3. https://towardsdatascience.com/deep-learning-gender-from-name-lstm-recurrent-neural-networks-448d64553044\n",
+        "4. https://www.nltk.org/book/ch02.html#sec-lexical-resources"
+      ],
+      "metadata": {
+        "id": "ExMITGgCdQWz"
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [],
+      "metadata": {
+        "id": "PHiDsdXLhbbW"
+      }
+    }
+  ]
+}
